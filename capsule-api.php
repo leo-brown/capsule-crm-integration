@@ -21,7 +21,6 @@ Class CapsuleAPI {
 
 	/** Internal class Vars **/
 	private $host = '';
-	private $userID = '';
 	private $key;
 	private $protocol = 'https';
 
@@ -31,10 +30,9 @@ Class CapsuleAPI {
 	  * @param String $key Authentication key for Capsule API
 	  * @return Void
 	  */
-	function CapsuleAPI($host, $key, $userID) {
+	function CapsuleAPI($host, $key) {
 		$this->host = $host;
 		$this->key = $key;
-		$this->userID = $userID;
 	}
 
 	/**
@@ -115,23 +113,17 @@ Class CapsuleAPI {
 	  * @param String search term to find user by
 	  * @return Mixed False on failure, otherwise an array of results
 	  */
-	function findUser($search = '') {
-		if(!$search) {
-			$search = $this->userID;
-		}
+	function getUsers() {
+		
 		$result = $this->action(
 			$this->protocol. '://'.
 			$this->host.'/api/'.
-			"user?q=".$search
+			"user?q="
 		);
-		if($result['users']['@size'] == '0') return false;
-		else foreach ($result['users']['user'] as $user) {
-			if($user['id'] == $this->userID) {
-				return $user;
-			}	
-		}
+		if(!$result['users']['@size']) return false;
+		else return $result['users']['user'];
 	}
-
+	
 	/**
 	  * Get notes for a given party ID
 	  * @param Integer @partyID 

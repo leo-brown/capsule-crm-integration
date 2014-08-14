@@ -25,25 +25,26 @@ $synthesis_api_secret = @$argv[3];
 
 $capsule_api_host = @$argv[4];
 $capsule_api_key = @$argv[5];
-$capsule_user_id = @$argv[6];
 
-if(!$synthesis_api_host || !$synthesis_api_key || !$synthesis_api_secret || !$capsule_api_host || !$capsule_api_key || !$capsule_user_id) {
-	die("Usage: {$argv[0]} [synthesis_host] [synthesis_key] [synthesis_secret] [capsule_api_host] [capsule_api_key] [capsule_user_id]");
+if(!$synthesis_api_host || !$synthesis_api_key || !$synthesis_api_secret || !$capsule_api_host || !$capsule_api_key) {
+	die("Usage: {$argv[0]} [synthesis_host] [synthesis_key] [synthesis_secret] [capsule_api_host] [capsule_api_key]");
 }
 
-// Login to Synthesis and Capsule API's
+// Login.
 $synthesisApi = new SynthesisAPI($synthesis_api_host, $synthesis_api_key, $synthesis_api_secret);
-$capsuleApi = new CapsuleAPI($capsule_api_host, $capsule_api_key, $capsule_user_id);
+$capsuleApi = new CapsuleAPI($capsule_api_host, $capsule_api_key);
 
-if(!$synthesisApi->authenticated) {
-	die('Error: Authentication with Synthesis failed');
+// Find logged in User.
+$capsuleUsers = $capsuleApi->getUsers();
+$currentUser;
+foreach ($capsuleUsers as $user) {
+	if(isset($user['loggedIn']) && $user['loggedIn'] == true) $currentUser = $user;
 }
-	
-$user = $capsuleApi->findUser();
-$party = $capsuleApi->findPartyById($user['partyId']);
+
+// Find a corresponding Capsule party.
+$party = $capsuleApi->findPartyById($currentUser['partyId']);
 
 $calls = array();
-
 foreach ($party['person']['contacts']['phone'] as $number) {
 	$calls = array_merge($calls, $synthesisApi->getCalls(stripNumber($number['phoneNumber'], true)));
 }
@@ -59,14 +60,11 @@ foreach ($formattedCalls as $key => &$formattedCall) {
 	$fromParty = $capsuleApi->findParty(stripNumber($formattedCall['from_number']));
 	$toParty = $capsuleApi->findParty(stripNumber($formattedCall['to_number']));
 
+	if(!$fromParty || !$toParty) continue;
+	if($fromParty === $toParty) continue;
+
 	$formattedCall['from_party'] = sanitiseParty($fromParty);
 	$formattedCall['to_party'] = sanitiseParty($toParty);
-	
-	// If no parties are found, theres nothing to do. continue.
-	if(!array_key_exists('from_party', $formattedCall) && !array_key_exists('to_party', $formattedCall)) {
-		unset($formattedCalls[$key]);
-		continue;
-	}
 
 	// If both a from and to party exist within the CRM:
 	if(!empty($formattedCall['from_party']) && !empty($formattedCall['to_party'])) {
@@ -78,21 +76,6 @@ foreach ($formattedCalls as $key => &$formattedCall) {
 			$capsuleApi->addNote($formattedCall['to_party']['id'], makeNote('inbound', $formattedCall));
 		}
 		continue;
-	}
-
-	// If just a to party exists within the CRM:
-	if(!empty($formattedCall['to_party']) && empty($formattedCall['from_party'])) {
-		if(!hasExistingNote($formattedCall['to_party']['id'], $formattedCall['timestamp'])) {
-			$capsuleApi->addNote($formattedCall['to_party']['id'], makeNote('inbound', $formattedCall));
-			continue;
-		} 
-	}
-	// If just a from party exists within the CRM:
-	if(empty($formattedCall['to_party']) && !empty($formattedCall['from_party'])) {
-		if(!hasExistingNote($formattedCall['from_party']['id'], $formattedCall['timestamp'])) {
-			$capsuleApi->addNote($formattedCall['from_party']['id'], makeNote('outbound', $formattedCall));
-			continue;
-		} 
 	}
 }
 
@@ -118,7 +101,7 @@ function formatCalls($calls) {
 			case 'outbound':
 				array_push($formattedCalls, array(
 					'from_number' => $call['clid'],
-					'to_number' => $call['dnis'],
+					'to_number' => $call['number'],
 					'timestamp' => $call['time_utc'],
 					'duration' => $call['length'],
 					'guid' => $call['guid']
@@ -136,7 +119,6 @@ function formatCalls($calls) {
  * @return Array             Returns a formatted Capsule historyItem,
  */
 function makeNote($direction, $noteData) {
-
 	switch ($direction) {
 		case 'inbound':
 			$note = $noteData['to_party']['name'].' ('.$noteData['to_number'].") was called by ".
@@ -165,23 +147,28 @@ function makeNote($direction, $noteData) {
  * @param  String $number 
  * @return Array         Data for the matched party.
  */
-function sanitiseParty($party = null) {
+function sanitiseParty($party) {
 	
-	if(!$party) {
-		return array(
-			'id' => '',
-			'name' => ''
-		);
-	}
-
 	foreach ($party as $key => $value) {
 		if($key == 'person') {
+			if(array_key_exists(0, $party['person'])) {
+				return array(
+					'id' => $party['person'][0]['id'],
+					'name' => $party['person'][0]['firstName'].' '.$party['person'][0]['lastName']
+				);
+			}
 			return array(
 				'id' => $party['person']['id'],
 				'name' => $party['person']['firstName'].' '.$party['person']['lastName']
 			);
 		}
 		elseif ($key == 'organisation') {
+			if(array_key_exists(0, $party['organisation'])) {
+				return array(
+					'id' => $party['person'][0]['id'],
+					'name' => $party['person'][0]['firstName'].' '.$party['person'][0]['lastName']
+				);
+			}
 			return array(
 				'id' => $party['organisation']['id'],
 				'name' => $party['organisation']['name']
@@ -198,6 +185,7 @@ function sanitiseParty($party = null) {
  * @return boolean            If any are found returns true, else returns false.
  */
 function hasExistingNote($partyID, $dateTime) {
+	
 	global $capsuleApi;
 	$notes = $capsuleApi->getNotes($partyID);
 	if(!$notes) return false;

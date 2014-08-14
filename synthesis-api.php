@@ -105,7 +105,6 @@ Class SynthesisAPI {
     if(!$number) $url = $this->protocol. '://'.$this->host.'/'.$this->version.'/calls';
     else $url = $this->protocol. '://'.$this->host.'/'.$this->version.'/calls/?number='.$number;
     $result = $this->action($url);
-
     if($result['status']['code'] != 200) return false; 
     else return $result['results'];
   }
