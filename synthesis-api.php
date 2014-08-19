@@ -103,7 +103,7 @@ Class SynthesisAPI {
   function getCalls($number = null) {
     
     if(!$number) $url = $this->protocol. '://'.$this->host.'/'.$this->version.'/calls';
-    else $url = $this->protocol. '://'.$this->host.'/'.$this->version.'/calls/?number='.$number;
+    else $url = $this->protocol. '://'.$this->host.'/'.$this->version.'/calls/?limit=50&number='.$number;
     $result = $this->action($url);
     if($result['status']['code'] != 200) return false; 
     else return $result['results'];

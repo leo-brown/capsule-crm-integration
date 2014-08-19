@@ -13,7 +13,6 @@
  * 	synthesis_api_secret 
  * 	capsule_api_host: i.e subdomain.capsulecrm.com
  * 	capsule_api_key
- * 	capsule_user_id
  */
 
 require 'synthesis-api.php';
@@ -36,9 +35,15 @@ $capsuleApi = new CapsuleAPI($capsule_api_host, $capsule_api_key);
 
 // Find logged in User.
 $capsuleUsers = $capsuleApi->getUsers();
-$currentUser;
+$currentUser=false;
 foreach ($capsuleUsers as $user) {
-	if(isset($user['loggedIn']) && $user['loggedIn'] == true) $currentUser = $user;
+	if(isset($user['loggedIn']) && $user['loggedIn'] == true){
+		$currentUser = $user;
+		break;
+	}
+}
+if(!$currentUser){
+	die("Cannot find user from key");
 }
 
 // Find a corresponding Capsule party.
@@ -68,6 +73,7 @@ foreach ($formattedCalls as $key => &$formattedCall) {
 
 	// If both a from and to party exist within the CRM:
 	if(!empty($formattedCall['from_party']) && !empty($formattedCall['to_party'])) {
+
 		if(!hasExistingNote($formattedCall['from_party']['id'], $formattedCall['timestamp'])) {
 			$capsuleApi->addNote($formattedCall['from_party']['id'], makeNote('outbound', $formattedCall));
 		}
@@ -93,6 +99,7 @@ function formatCalls($calls) {
 				array_push($formattedCalls, array(
 					'from_number' => $call['clid'],
 					'to_number' => $call['dnis'],
+					'localtime' => $call['time'],
 					'timestamp' => $call['time_utc'],
 					'duration' => $call['length'],
 					'guid' => $call['guid']
@@ -102,6 +109,7 @@ function formatCalls($calls) {
 				array_push($formattedCalls, array(
 					'from_number' => $call['clid'],
 					'to_number' => $call['number'],
+					'localtime' => $call['time'],
 					'timestamp' => $call['time_utc'],
 					'duration' => $call['length'],
 					'guid' => $call['guid']
@@ -121,12 +129,14 @@ function formatCalls($calls) {
 function makeNote($direction, $noteData) {
 	switch ($direction) {
 		case 'inbound':
-			$note = $noteData['to_party']['name'].' ('.$noteData['to_number'].") was called by ".
+			$note = 'At '.date('H:i:s',strtotime($noteData['localtime'])).', '.
+			  $noteData['to_party']['name'].' ('.$noteData['to_number'].") was called by ".
 			$noteData['from_party']['name'].' ('.$noteData['from_number'].'). 
 			Call duration: '.$noteData['duration'].' seconds';
 			break;
 		case 'outbound':
-			$note = $noteData['from_party']['name'].' ('.$noteData['from_number'].") called ".
+			$note = 'At '.date('H:i:s',strtotime($noteData['timestamp'])).', '.
+			  $noteData['from_party']['name'].' ('.$noteData['from_number'].") called ".
 			$noteData['to_party']['name'].' ('.$noteData['to_number'].'). 
 			Call duration: '.$noteData['duration'].' seconds';
 			break;
