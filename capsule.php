@@ -15,6 +15,10 @@
  * 	capsule_api_key
  */
 
+if(!is_null(@$_SERVER['HTTP_HOST'])){
+	die('Please run from CLI Only');
+}
+
 require 'synthesis-api.php';
 require 'capsule-api.php';
 
@@ -35,8 +39,15 @@ $capsuleApi = new CapsuleAPI($capsule_api_host, $capsule_api_key);
 
 // Find logged in User.
 $capsuleUsers = $capsuleApi->getUsers();
+
+// Capsule does not return an array of arrays for a single-user
+// system so lets detect and that re-wrap if needed
+if(!is_array(reset($capsuleUsers))){
+	$capsuleUsers = array($capsuleUsers);
+}
+
 $currentUser=false;
-foreach ($capsuleUsers as $user) {
+foreach ((array) $capsuleUsers as $user) {
 	if(isset($user['loggedIn']) && $user['loggedIn'] == true){
 		$currentUser = $user;
 		break;
@@ -49,9 +60,20 @@ if(!$currentUser){
 // Find a corresponding Capsule party.
 $party = $capsuleApi->findPartyById($currentUser['partyId']);
 
+if(@$party['message']=='party not found'){
+	die('No record for user');
+}
+
 $calls = array();
-foreach ($party['person']['contacts']['phone'] as $number) {
-	$calls = array_merge($calls, $synthesisApi->getCalls(stripNumber($number['phoneNumber'], true)));
+if(@$party['person']['contacts']['phone']){
+
+	// this may be an array or an object
+	if(is_array(reset($party['person']['contacts']['phone']))){
+		foreach ($party['person']['contacts']['phone'] as $number) {
+			$calls = array_merge($calls, $synthesisApi->getCalls(stripNumber($number['phoneNumber'], true)));
+		}
+	}
+	else $calls = $synthesisApi->getCalls(stripNumber($party['person']['contacts']['phone']['phoneNumber'], true));
 }
 
 // format CDR's to make them easier to work with.
@@ -59,7 +81,6 @@ $formattedCalls = formatCalls($calls);
 
 // Take the formatted CDR's and generate a note if required.
 foreach ($formattedCalls as $key => &$formattedCall) {
-	
 	if($formattedCall['duration'] <= '0') continue;
 
 	$fromParty = $capsuleApi->findParty(stripNumber($formattedCall['from_number']));
@@ -127,18 +148,20 @@ function formatCalls($calls) {
  * @return Array             Returns a formatted Capsule historyItem,
  */
 function makeNote($direction, $noteData) {
+	$mins = floor($noteData['duration']/60);
+	$secs = $noteData['duration'] - ($mins * 60);
 	switch ($direction) {
 		case 'inbound':
 			$note = 'At '.date('H:i:s',strtotime($noteData['localtime'])).', '.
 			  $noteData['to_party']['name'].' ('.$noteData['to_number'].") was called by ".
 			$noteData['from_party']['name'].' ('.$noteData['from_number'].'). 
-			Call duration: '.$noteData['duration'].' seconds';
+			Call duration: '.$mins.'m'.$secs.'s';
 			break;
 		case 'outbound':
 			$note = 'At '.date('H:i:s',strtotime($noteData['timestamp'])).', '.
 			  $noteData['from_party']['name'].' ('.$noteData['from_number'].") called ".
 			$noteData['to_party']['name'].' ('.$noteData['to_number'].'). 
-			Call duration: '.$noteData['duration'].' seconds';
+			Call duration: '.$mins.'m'.$secs.'s';
 			break;
 		default:
 			return 'Error: Invalid direction specified';
@@ -176,7 +199,7 @@ function sanitiseParty($party) {
 			if(array_key_exists(0, $party['organisation'])) {
 				return array(
 					'id' => $party['person'][0]['id'],
-					'name' => $party['person'][0]['firstName'].' '.$party['person'][0]['lastName']
+					'name' => @$party['person'][0]['firstName'].' '.@$party['person'][0]['lastName']
 				);
 			}
 			return array(
@@ -229,7 +252,6 @@ function stripNumber($num, $returnE164 = false) {
 	else if(is_numeric($num)) {
 		$strippedNumber = $num;
 	}
-	
 	if($returnE164) return '44'.$strippedNumber;
 	else return $strippedNumber;
 }

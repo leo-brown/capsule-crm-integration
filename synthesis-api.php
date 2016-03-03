@@ -10,6 +10,7 @@ Class SynthesisAPI {
   var $key;
   var $secret;
   var $protocol = 'http';
+  var $cookiejar = '';
 
   public $authenticated = false;
 
@@ -35,6 +36,9 @@ Class SynthesisAPI {
 
     // Login
     $this->login();
+  }
+
+  function __destruct(){
   }
 
   /**
@@ -63,7 +67,7 @@ Class SynthesisAPI {
     global $s;
     if(!$s) {
       $s = curl_init();
-      curl_setopt($s,CURLOPT_COOKIEJAR, '/tmp/synthesis_api_cookies_'.md5(uniqid()));
+      curl_setopt($s,CURLOPT_COOKIEJAR, $this->cookiejar = '/dev/null');
       curl_setopt($s,CURLOPT_RETURNTRANSFER, 1);
       curl_setopt($s,CURLOPT_SSL_VERIFYPEER, false);
     }
@@ -103,7 +107,7 @@ Class SynthesisAPI {
   function getCalls($number = null) {
     
     if(!$number) $url = $this->protocol. '://'.$this->host.'/'.$this->version.'/calls';
-    else $url = $this->protocol. '://'.$this->host.'/'.$this->version.'/calls/?limit=50&number='.$number;
+    else $url = $this->protocol. '://'.$this->host.'/'.$this->version.'/calls/?limit=10&number='.$number;
     $result = $this->action($url);
     if($result['status']['code'] != 200) return false; 
     else return $result['results'];
